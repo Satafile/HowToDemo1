@@ -1,0 +1,150 @@
+Подробное руководство по настройке firewalld в Linux с разбором каждой команды
+В этом руководстве мы детально разберём последовательность команд, связанных с установкой и настройкой firewalld — гибкого и мощного фаервола для Linux на основе nftables (ранее iptables). Каждая команда будет объяснена максимально подробно, чтобы у вас не осталось вопросов.
+
+1. Установка firewalld (apt-get -y install firewalld)
+Что делает эта команда?
+apt-get — пакетный менеджер в Debian/Ubuntu.
+
+install — устанавливает указанный пакет.
+
+-y — автоматически отвечает "yes" на все запросы подтверждения.
+
+firewalld — динамический фаервол с поддержкой зон и runtime-конфигурации.
+
+Подробности:
+Если firewalld не установлен, система использует ufw (в Ubuntu) или базовый iptables.
+
+После установки firewalld не запускается автоматически — это делается отдельно.
+
+2. Включение и автозапуск firewalld (systemctl enable --now firewalld)
+Что делает эта команда?
+systemctl — утилита управления службами в systemd.
+
+enable — добавляет службу в автозагрузку.
+
+--now — сразу запускает службу (аналог enable + start).
+
+Подробности:
+После выполнения firewalld начнёт работать и будет запускаться при каждой загрузке системы.
+
+Проверить статус можно командой:
+
+bash
+systemctl status firewalld
+Если служба не запускается, проверьте конфликты с iptables/nftables:
+
+bash
+sudo systemctl stop iptables
+sudo systemctl disable iptables
+3. Назначение интерфейсов зонам (firewall-cmd --permanent --zone=public --add-interface=ens18 и др.)
+Что делают эти команды?
+firewall-cmd — основная утилита управления firewalld.
+
+--permanent — сохраняет правило после перезагрузки.
+
+--zone=public — указывает зону (в данном случае public — для ненадёжных сетей).
+
+--add-interface=ens18 — добавляет сетевой интерфейс в зону.
+
+Подробности о зонах:
+public — стандартная зона для внешних подключений (ограниченный доступ).
+
+trusted — разрешает весь трафик (используется для доверенных сетей).
+
+В данном случае:
+
+ens18 (например, WAN) — в зоне public.
+
+ens19 и ens20 (например, LAN или DMZ) — в зоне trusted.
+
+Проверка назначения интерфейсов:
+bash
+firewall-cmd --get-active-zones
+Вывод:
+
+text
+public
+  interfaces: ens18
+trusted
+  interfaces: ens19 ens20
+4. Включение маскарадинга (firewall-cmd --permanent --zone=public --add-masquerade)
+Что делает эта команда?
+--add-masquerade — включает NAT (подмена исходящего IP).
+
+Зачем это нужно?
+Если сервер работает как шлюз, маскарадинг позволяет внутренним хостам (ens19, ens20) выходить в интернет через ens18.
+
+Без этого пакеты из локальной сети не смогут маршрутизироваться наружу.
+
+Альтернатива:
+Если NAT не нужен, можно использовать чистую маршрутизацию:
+
+bash
+sysctl -w net.ipv4.ip_forward=1
+5. Применение правил (firewall-cmd --complete-reload)
+Что делает эта команда?
+--complete-reload — полная перезагрузка правил (с разрывом текущих соединений).
+
+Чем отличается от --reload?
+--reload — "мягкая" перезагрузка (правила обновляются без разрыва сессий).
+
+--complete-reload — сбрасывает все соединения (используется при критических изменениях).
+
+Когда применять?
+После изменения зон или NAT.
+
+Если --reload не срабатывает.
+
+6. Перезапуск сети (systemctl restart network)
+Что делает эта команда?
+Перезапускает сетевые интерфейсы и применяет настройки.
+
+Зачем это нужно?
+Если интерфейсы были изменены (ens18, ens19, ens20), перезапуск гарантирует корректное применение конфигурации.
+
+Альтернативы:
+В Ubuntu/Debian:
+
+bash
+netplan apply
+В RHEL/CentOS:
+
+bash
+nmcli connection reload
+7. Проверка connectivity (ping ya.ru и ping ya.ru -I 172.16.4.1)
+Что делают эти команды?
+ping ya.ru — проверяет доступность интернета через основной интерфейс.
+
+ping ya.ru -I 172.16.4.1 — отправляет ping с указанного IP (например, с ens19).
+
+Зачем указывать -I?
+Если у сервера несколько интерфейсов, -I позволяет проверить маршрутизацию с конкретного IP.
+
+Пример:
+
+172.16.4.1 — допустим, IP ens19 (доверенная зона).
+
+172.16.5.1 — IP ens20 (тоже доверенная зона).
+
+Возможные проблемы:
+Если ping -I не работает, проверьте:
+
+NAT (masquerade).
+
+Маршруты (ip route).
+
+Правила фаервола (firewall-cmd --list-all).
+
+
+------------------- ISP2
+apt-get -y install firewalld
+systemctl enable --now firewalld
+firewall-cmd --permanent --zone=public --add-interface=ens18
+firewall-cmd --permanent --zone=trusted --add-interface=ens19
+firewall-cmd --permanent --zone=trusted --add-interface=ens20
+firewall-cmd --permanent --zone=public --add-masquerade
+firewall-cmd --complete-reload
+systemctl restart network
+ping ya.ru
+ping ya.ru -I 172.16.4.1
+ping ya.ru -I 172.16.5.1
