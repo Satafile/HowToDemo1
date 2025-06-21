@@ -1,0 +1,144 @@
+Детальный разбор конфигурации OSPF с аутентификацией
+Эта конфигурация настраивает OSPF (Open Shortest Path First) - протокол динамической маршрутизации с аутентификацией. Давайте разберём её пошагово.
+
+1. Общая структура конфигурации
+bash
+en
+conf t
+router ospf 1
+  ...
+ex
+int tunnel.1
+  ...
+ex
+ex
+wr
+do sh ip route
+en - вход в привилегированный режим
+
+conf t - вход в режим глобальной конфигурации
+
+ex - выход из текущего режима конфигурации
+
+wr - сохранение конфигурации
+
+do sh ip route - просмотр таблицы маршрутизации
+
+2. Настройка OSPF Process 1
+bash
+router ospf 1
+Создаёт процесс OSPF с ID 1 (может быть любым числом от 1 до 65535)
+
+3. Объявление сетей в OSPF
+bash
+  network 10.10.10.8/30 area 0
+  network 192.168.1.0/26 area 0
+  network 192.168.1.64/28 area 0
+  network 192.168.1.80/29 area 0
+Все сети добавляются в Area 0 (Backbone Area)
+
+Конкретные сети:
+
+10.10.10.8/30 - туннельный интерфейс (вероятно GRE/IPSec)
+
+192.168.1.0/26 - основная LAN сеть (62 хоста)
+
+192.168.1.64/28 - дополнительная подсеть (14 хостов)
+
+192.168.1.80/29 - ещё одна подсеть (6 хостов)
+
+4. Настройка пассивных интерфейсов
+bash
+  passive-interface isp
+  passive-interface 100
+  passive-interface 200
+  passive-interface 999
+passive-interface предотвращает отправку OSPF Hello-пакетов на этих интерфейсах
+
+Интерфейсы:
+
+isp - внешний интерфейс (не должен участвовать в OSPF)
+
+100, 200, 999 - вероятно VLAN-интерфейсы, подключённые к конечным устройствам
+
+5. Аутентификация Area 0
+bash
+  area 0 authentication message-digest
+Включает аутентификацию MD5 для всей Area 0
+
+Все соседи в этой области должны использовать одинаковые ключи аутентификации
+
+6. Настройка аутентификации на туннельном интерфейсе
+bash
+int tunnel.1
+  ip ospf authentication-key P@ssw0rd
+  ip ospf authentication message-digest
+  ex
+ip ospf authentication-key P@ssw0rd - устанавливает ключ MD5
+
+ip ospf authentication message-digest - явно указывает использовать MD5
+
+Ключ должен совпадать на обоих концах туннеля
+
+7. Проверка конфигурации
+После сохранения (wr) рекомендуется проверить:
+
+Таблицу маршрутизации:
+
+bash
+show ip route
+Должны отображаться OSPF-маршруты (помечены буквой "O")
+
+Соседство OSPF:
+
+bash
+show ip ospf neighbor
+Должен отображаться сосед на туннельном интерфейсе
+
+Интерфейсы OSPF:
+
+bash
+show ip ospf interface
+Проверить состояние интерфейсов и аутентификацию
+
+Возможные проблемы и решения
+Соседство не устанавливается:
+
+Проверить reachability туннеля (ping 10.10.10.10)
+
+Убедиться, что ключи MD5 совпадают на обоих концах
+
+Проверить, что Area ID совпадает
+
+Маршруты не появляются:
+
+Убедиться, что сети правильно объявлены в network statements
+
+Проверить, что интерфейсы не находятся в состоянии passive там, где это не нужно
+
+Проблемы с аутентификацией:
+
+bash
+debug ip ospf packet
+Показывает, принимаются ли пакеты с правильным хешем
+------------------------HQ-RTR-OSPF
+en
+conf t
+router ospf 1
+  network 10.10.10.8/30 area 0
+  network 192.168.1.0/26 area 0
+  network 192.168.1.64/28 area 0
+  network 192.168.1.80/29 area 0
+  passive-interface isp
+  passive-interface 100
+  passive-interface 200
+  passive-interface 999
+  area 0 authentication message-digest
+    ex
+int tunnel.1
+  ip ospf authentication-key P@ssw0rd
+  ip ospf authentication message-digest
+  ex
+ex
+wr
+do sh ip route
