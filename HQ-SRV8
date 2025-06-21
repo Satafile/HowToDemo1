@@ -1,0 +1,146 @@
+Подробное руководство по настройке DNS-зон BIND
+1. Подготовка файлов зон
+bash
+cd zone
+cp localhost db.au
+mcedit db.au
+Редактирование прямой зоны (db.au)
+Заменяем все вхождения:
+
+localhost → au-team.irpo
+
+127.0.0.1 → 192.168.1.2
+
+Добавляем записи:
+
+text
+hq-srv  IN  A  192.168.1.2
+hq-rtr  IN  A  192.168.1.1
+br-srv  IN  A  192.168.2.2
+bt-rtr  IN  A  192.168.2.1
+hq-cli  IN  A  192.168.1.66
+moodle  IN  CNAME  hq-rtr
+wiki    IN  CNAME  hq-rtr
+Создание обратной зоны
+bash
+cp db.au db.revers
+chown root:named db.*
+mcedit db.revers
+Добавляем PTR-записи:
+
+text
+1  IN  PTR  hq-rtr.au-team.irpo.
+2  IN  PTR  hq-srv.au-team.irpo.
+66 IN  PTR  hq-cli.au-team.irpo.
+2. Проверка зон
+bash
+named-checkzone au-team.irpo db.au
+named-checkzone 1.168.192.in-addr.arpa db.revers
+3. Настройка клиентского DNS
+bash
+cd /etc/net/iface/ens19
+mcedit resolv.conf
+Устанавливаем:
+
+text
+nameserver 192.168.1.2
+search au-team.irpo
+4. Перезапуск сервисов
+bash
+systemctl restart network
+systemctl restart bind
+5. Тестирование DNS
+bash
+host hq-srv
+host 192.168.1.2
+host wiki
+host ya.ru
+Типичные проблемы и решения
+Ошибки проверки зон:
+
+Убедитесь, что все точки в конце FQDN расставлены правильно
+
+Проверьте правильность формата файлов (должна быть пустая строка в конце)
+
+Нет ответа от DNS:
+
+bash
+dig @192.168.1.2 au-team.irpo
+Проверьте:
+
+Работает ли служба BIND (systemctl status bind)
+
+Открыт ли порт 53 (netstat -tulnp | grep 53)
+
+Обратные запросы не работают:
+Убедитесь, что в файле db.revers:
+
+Указаны правильные IP (только последний октет)
+
+Все PTR-записи имеют точки в конце
+
+Дополнительные рекомендации
+Для логов DNS-запросов добавьте в named.conf:
+
+text
+logging {
+  channel query.log {
+    file "/var/log/named/query.log";
+    severity debug 3;
+  };
+  category queries { query.log; };
+};
+Для автоматического обновления файлов зон при изменении IP можно использовать nsupdate
+
+Для безопасности ограничьте рекурсивные запросы только своей сетью:
+
+text
+allow-recursion { 192.168.1.0/24; };
+Эта конфигурация создает полнофункциональный DNS-сервер с:
+
+Прямой зоной для домена au-team.irpo
+
+Обратной зоной для сети 192.168.1.0/24
+
+Основными A- и CNAME-записями
+
+Рабочими PTR-записями для обратного DNS
+----------------HQ-SRV
+cd zone
+cp localhost db.au
+mcedit db.au
+<<!--Выполнить замену localhost на au-team.irpo
+и 127.0.0.1 на 192.168.1.2--!>>
+F2 - Save F10 - exit
+cp db.au db.revers
+chownd root:named db.*
+mcedit db.au
+<<!--Дописываем ниже--!>>
+hq-srv  IN  A  192.168.1.2
+hq-rtr  IN  A  192.168.1.1
+br-srv  IN  A  192.168.2.2
+bt-rtr  IN  A  192.168.2.1
+hq-cli  IN  A  192.168.1.66
+moodle  IN  CNAME  hq-rtr
+wiki  IN  CNAME  hq-rtr
+F2 - Save F10 - exit
+mcedit db.revers
+<<!--Дописываем ниже--!>>
+1  IN  PTR  hq-rtr.au-team.irpo.
+2  IN  PTR  hq-srv.au-team.irpo.
+66  IN  PTR hq-cli.au-team.irpo.
+F2 - Save F10 - exit
+named-checkzone au-team.irpo db.au
+named-checkzone 1.168.192.in-addr.arpa db.revers
+systemctl restart bind
+cd /etc/net/iface/ens19
+mcedit resolv.conf
+nameserver 192.168.1.2
+search au-team.irpo
+F2 - Save F10 - exit
+systemctl restart network
+systemctl restart bind
+host hq-srv
+host 192.168.1.2
+host wiki
+host ya.ru
