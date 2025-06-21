@@ -1,0 +1,183 @@
+Подробное руководство по настройке DNS-сервера BIND на Linux
+1. Настройка имени хоста и сети
+bash
+hostnamectl hostname hq-srv.au-team.irpo
+exec bash
+Устанавливает FQDN (полное доменное имя) сервера
+
+exec bash - перезапускает оболочку для применения изменений
+
+2. Конфигурация сетевого интерфейса
+bash
+cd /etc/net/ifaces/ens18
+echo 192.168.1.2/26 > ipv4address
+echo default via 192.168.1.1 > ipv4route
+echo nameserver 77.88.8.8 > resolv.conf
+systemctl restart network
+Настраивает статический IP 192.168.1.2/26
+
+Устанавливает шлюз по умолчанию 192.168.1.1
+
+Прописывает DNS-сервер Яндекса (77.88.8.8)
+
+Перезапускает сеть для применения изменений
+
+3. Установка BIND
+bash
+apt-get update
+apt-get install bind bind-utils -y
+Обновляет пакеты и устанавливает BIND9 + утилиты (nslookup, dig)
+
+4. Основная конфигурация BIND
+bash
+cd /etc/bind
+mcedit named.conf
+Комментируем строку:
+
+text
+#include "/etc/bind/rndc.conf";
+(Добавляем # в начало строки)
+
+5. Настройка options.conf
+bash
+mcedit options.conf
+Приводим к виду:
+
+text
+listen-on { 192.168.1.2; };
+//listen-on-v6 { ::1; };
+forwarders { 77.88.8.8; };
+allow-query { any; };
+allow-query-cache { any; };
+allow-recursion { any; };
+Сервер слушает только на внутреннем IP
+
+Отключен IPv6
+
+Используются форвардеры Яндекса
+
+Разрешены запросы и рекурсия для всех
+
+6. Настройка зон в local.conf
+bash
+mcedit local.conf
+Добавляем:
+
+text
+zone "au-team.irpo" {
+  type master;
+  file "/etc/bind/zone/db.au";
+};
+
+zone "1.168.192.in-addr.arpa" {
+  type master;
+  file "/etc/bind/zone/db.revers";
+};
+Прямая зона для домена au-team.irpo
+
+Обратная зона для сети 192.168.1.0/24
+
+7. Создание файлов зон
+Создаем директорию для зон:
+
+bash
+mkdir -p /etc/bind/zone
+Прямая зона (db.au)
+bash
+mcedit /etc/bind/zone/db.au
+Содержимое:
+
+text
+$TTL 86400
+@ IN SOA hq-srv.au-team.irpo. admin.au-team.irpo. (
+  2024062201 ; Serial
+  3600       ; Refresh
+  1800       ; Retry
+  604800     ; Expire
+  86400      ; Minimum TTL
+)
+
+@       IN NS    hq-srv.au-team.irpo.
+hq-srv  IN A     192.168.1.2
+www     IN CNAME hq-srv
+Обратная зона (db.revers)
+bash
+mcedit /etc/bind/zone/db.revers
+Содержимое:
+
+text
+$TTL 86400
+@ IN SOA hq-srv.au-team.irpo. admin.au-team.irpo. (
+  2024062201 ; Serial
+  3600       ; Refresh
+  1800       ; Retry
+  604800     ; Expire
+  86400      ; Minimum TTL
+)
+
+@       IN NS    hq-srv.au-team.irpo.
+2       IN PTR   hq-srv.au-team.irpo.
+8. Проверка и запуск
+bash
+named-checkconf
+named-checkzone au-team.irpo /etc/bind/zone/db.au
+named-checkzone 1.168.192.in-addr.arpa /etc/bind/zone/db.revers
+systemctl restart bind9
+systemctl enable bind9
+9. Тестирование
+bash
+nslookup hq-srv.au-team.irpo 192.168.1.2
+dig www.au-team.irpo @192.168.1.2
+nslookup 192.168.1.2 192.168.1.2
+Важные замечания
+Все файлы должны заканчиваться пустой строкой
+
+После изменения зон нужно увеличивать Serial (первое число в SOA)
+
+Для внешнего доступа нужно настроить фаервол:
+
+bash
+ufw allow 53/tcp
+ufw allow 53/udp
+Эта конфигурация создает:
+
+Авторитативный DNS-сервер для домена au-team.irpo
+
+Поддержку прямых и обратных запросов
+
+Кеширующий DNS с рекурсией для внутренней сети
+----------------HQ-SRV
+hostnamectl hostname hq-srv.au-team.irpo
+exec bash
+cd /etc/net/ifaces/ens18
+echo 192.168.1.2/26 > ipv4address
+echo default via 192.168.1.1 > ipv4route
+echo nameserver 77.88.8.8 > resolv.conf
+systemctl restart network
+apt-get update
+apt-get install bind bind-utils -y
+cd /etc/bind
+mcedit named.conf
+<<!--Коментируем строку
+#include "/etc/bind/rndc.conf";
+перед строкой должен стоять знак #--!>>
+F2 - Save F10 - exit
+mcedit options.conf
+<<!--Приводим к следующему виду--!>>
+listen-on { 192.168.1.2; };
+//listen-on-v6 { ::1; };
+forwaders { 77.88.8.8; };
+allow-query { any; };
+allow-query-cache { any; };
+allow-recursion { any; };
+F2 - Save F10 - exit
+mcedit local.conf
+zone "au-team.irpo" {
+  type master;
+  file "/etc/bind/zone/db.au";
+};
+zone "1.168.192.in-addr.arpa" {
+  type master;
+  file "/etc/bind/zone/db.revers";
+};
+F2 - Save F10 - exit
