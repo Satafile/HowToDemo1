@@ -1,0 +1,228 @@
+Подробный разбор конфигурации маршрутизатора (Cisco-like CLI)
+Данная конфигурация представляет собой настройку маршрутизатора с несколькими интерфейсами, VLAN-тэгированием, NAT и базовой маршрутизацией. Разберём каждую команду максимально подробно.
+
+1. Вход в режим конфигурации (en, conf t)
+en (сокращение от enable) — переход в привилегированный режим (аналог sudo в Linux).
+
+conf t (сокращение от configure terminal) — вход в режим глобальной конфигурации.
+
+2. Установка hostname (hostname hq-rtr.au-team.irpo)
+Задаёт имя устройства:
+
+hq-rtr — обозначает, что это головной маршрутизатор (HeadQuarter Router).
+
+au-team.irpo — доменное имя (возможно, внутренний DNS).
+
+3. Проверка состояния портов (do sh port br)
+do — выполняет команду в режиме конфигурации (обычно такие команды доступны только в enable).
+
+sh port br (сокращение от show port brief) — выводит краткую информацию о портах (аналог show interfaces brief в Cisco).
+
+4. Настройка интерфейсов
+4.1. Интерфейс ISP (внешний)
+bash
+int isp
+  ip address 172.16.4.14/28
+  ex
+int isp — вход в конфигурацию интерфейса isp (возможно, это логическое имя для WAN-порта).
+
+ip address 172.16.4.14/28 — назначение IP:
+
+172.16.4.14 — адрес маршрутизатора.
+
+/28 — маска (255.255.255.240), диапазон: 172.16.4.0–172.16.4.15.
+
+ex (exit) — выход из режима конфигурации интерфейса.
+
+4.2. Интерфейс 100 (внутренний, VLAN 100)
+bash
+int 100
+  ip address 192.168.1.1/26
+  ex
+int 100 — настройка виртуального интерфейса (SVI) для VLAN 100.
+
+192.168.1.1/26:
+
+/26 = 255.255.255.192 (62 хоста: 192.168.1.1–192.168.1.62).
+
+4.3. Интерфейс 200 (внутренний, VLAN 200)
+bash
+int 200
+  ip address 192.168.1.65/28
+  ex
+192.168.1.65/28:
+
+/28 = 255.255.255.240 (14 хостов: 192.168.1.65–192.168.1.78).
+
+4.4. Интерфейс 999 (внутренний, VLAN 999)
+bash
+int 999
+  ip address 192.168.1.81/29
+  ex
+192.168.1.81/29:
+
+/29 = 255.255.255.248 (6 хостов: 192.168.1.81–192.168.1.86).
+
+5. Настройка физических портов
+5.1. Порт te0 (подключение к ISP)
+bash
+port te0
+  service-instance isp
+    encapsulation untagged
+    connect ip interface isp
+    ex
+  ex
+port te0 — настройка порта (вероятно, 10G Ethernet).
+
+service-instance isp — создание сервисного инстанса (аналог sub-interface).
+
+encapsulation untagged — трафик без VLAN-тэгов (обычно для WAN).
+
+connect ip interface isp — связывает порт с интерфейсом isp.
+
+5.2. Порт te1 (подключение внутренних VLAN)
+bash
+port te1
+  service-instance 100
+    encapsulation dot1q 100
+    rewrite pop 1
+    connect ip interface 100
+    ex
+  service-instance 200
+    encapsulation dot1q 200
+    rewrite pop 1
+    connect ip interface 200
+    ex
+  service-instance 999
+    encapsulation dot1q 999
+    rewrite pop 1
+    connect ip interface 999
+    ex
+  ex
+encapsulation dot1q X — указывает, что трафик тэгируется VLAN X.
+
+rewrite pop 1 — удаляет VLAN-тэг при передаче (если это access-порт).
+
+connect ip interface X — связывает сервисный инстанс с интерфейсом VLAN.
+
+6. Настройка маршрутизации и DNS
+6.1. Дефолтный маршрут (ip route 0.0.0.0/0 172.16.4.1)
+Отправляет весь внешний трафик на шлюз 172.16.4.1 (провайдер).
+
+6.2. DNS-сервер (ip name-server 77.88.8.8)
+Указывает DNS от Яндекс (77.88.8.8).
+
+7. Настройка NAT
+7.1. NAT Pool (ip nat pool INTERNET 192.168.1.1-192.168.1.87)
+Создаёт пул адресов для NAT:
+
+192.168.1.1–192.168.1.87 (включает все внутренние подсети).
+
+7.2. Динамический NAT с перегрузкой (PAT)
+bash
+ip nat source dynamic inside-to-outside pool INTERNET overload 172.16.4.14
+dynamic inside-to-outside — разрешает NAT для исходящего трафика.
+
+overload — включает PAT (Port Address Translation), чтобы несколько внутренних хостов использовали один внешний IP (172.16.4.14).
+
+7.3. Назначение интерфейсов NAT
+bash
+int isp
+  ip nat outside
+  ex
+int 100
+  ip nat inside
+  ex
+int 200
+  ip nat inside
+  ex
+int 999
+  ip nat inside
+  ex
+ip nat outside — помечает isp как внешний интерфейс.
+
+ip nat inside — помечает VLAN-интерфейсы как внутренние.
+
+8. Сохранение конфигурации (wr)
+wr (сокращение от write) — сохраняет конфигурацию в NVRAM (аналог copy running-config startup-config в Cisco).
+
+Итоговая схема сети
+Интерфейс	IP/Маска	Назначение	NAT
+isp	172.16.4.14/28	WAN (внешний)	outside
+VLAN 100	192.168.1.1/26	LAN 1	inside
+VLAN 200	192.168.1.65/28	LAN 2	inside
+VLAN 999	192.168.1.81/29	Серверы/Management	inside
+Что делает эта конфигурация?
+Настраивает маршрутизатор с одним WAN и тремя внутренними VLAN.
+
+Обеспечивает доступ в интернет через NAT (PAT).
+
+Разделяет внутренние сети на подсети разного размера.
+
+Сохраняет конфигурацию для работы после перезагрузки.
+
+Если после применения есть проблемы:
+
+Проверьте NAT (show nat translations).
+
+Убедитесь, что VLAN правильно настроены на коммутаторе.
+
+Проверьте маршруты (show ip route).
+---------------HQ-RTR-Base
+en
+conf t
+hostname hq-rtr.au-team.irpo
+do sh port br
+int isp
+  ip address 172.16.4.14/28
+  ex
+int 100
+  ip address 192.168.1.1/26
+  ex
+int 200
+  ip address 192.168.1.65/28
+  ex
+int 999
+  ip address 192.168.1.81/29
+  ex
+port te0
+  service-instance isp
+    encapsulation untagged
+    connect ip interface isp
+    ex
+  ex
+port te1
+  service-instance 100
+    encapsulation dot1q 100
+    rewrite pop 1
+    connect ip interface 100
+    ex
+  service-instance 200
+    encapsulation dot1q 200
+    rewrite pop 1
+    connect ip interface 200
+    ex
+  service-instance 999
+    encapsulation dot1q 999
+    rewrite pop 1
+    connect ip interface 999
+    ex
+  ex
+ip route 0.0.0.0/0 172.16.4.1
+ip name-server 77.88.8.8
+ip nat pool INTERNET 192.168.1.1-192.168.1.87
+ip nat source dynamic inside-to-outside pool INTERNET overload 172.16.4.14
+int isp
+  ip nat outside
+  ex
+int 100
+  ip nat inside
+  ex
+int 200
+  ip nat inside
+  ex
+int 999
+  ip nat inside
+  ex
+ex
+wr
